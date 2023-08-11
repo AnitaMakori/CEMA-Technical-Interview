@@ -1,0 +1,172 @@
+---
+title: "CEMA Technical Interview"
+author: "Anita Makori"
+date: "2023-03-15"
+output: html_document
+---
+
+```{r setup, include=FALSE, echo=FALSE, message=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+#load packages
+library(tidyverse)
+library(janitor)
+library(sf)
+```
+
+
+```{r, include=F, echo=FALSE, message=FALSE, warning=FALSE}
+# 1. Data Wrangling Challenge
+
+# read data & clean names
+household_data <- read_csv("L4H_household_baseline_sample.csv", na="---")%>%
+  clean_names()
+
+individual_data <- read_csv("L4H_individual_baseline_sample.csv", na="---")%>%
+  clean_names()
+
+mother_data <- read_csv("L4H_mother_baseline_sample.csv", na="---")%>%
+  clean_names()
+
+# filter eligible hhs
+household_data1 <- household_data%>%
+  filter(hh_eligible%in%"1")
+
+# merge datasets
+mother_individual_merged <- individual_data%>%
+  full_join(mother_data, by=c("number"="number_0"))
+
+household_merged_data <- household_data%>%
+  full_join(mother_individual_merged, by="household_id")
+
+# recode variables
+household_merged_data1 <- household_merged_data%>%
+  mutate_at(vars(reason_for_ineligibility, rspntgndr, h_hfrml_eductn, rspndtmarital, rspndt_edctn, maincme), funs(factor))%>%
+  mutate(reason_for_ineligibility=recode(reason_for_ineligibility, "1"="No adult occupier >16 years", "2"="Withdrawal", "3"="Other reason"))%>%
+  mutate(rspntgndr=recode(rspntgndr, "1"="Male", "2"="Female"))%>%
+  mutate(h_hfrml_eductn=recode(h_hfrml_eductn, "1"="Not completed Primary school", "2"="Primary school", "3"="Secondary school", "4"="College-graduate", "5"="Madrassa", "6"="Other"))%>%
+  mutate(rspndtmarital=recode(rspndtmarital, "1"="Single", "2"="Married monogamous", "3"="Married polygamous", "4"="Divorced/ separated", "5"="Widow(er)"))%>%
+  mutate(rspndt_edctn=recode(rspndt_edctn, "1"="No formal education", "2"="Primary School", "3"="Secondary school", "4"="College-graduate", "5"="Madrassa", "6"="Other"))%>%
+  mutate(maincme=recode(maincme, "1"="Sale of livestock & livestock products", "2"="Sale of crops", "3"="Trading/business", "4"="Employment (salaried income)", "5"="Sale of personal assets", "6"="Remittance", "7"="Other"))
+
+# separate
+household_merged_data2 <- household_merged_data1%>%
+  separate(lvstckown, c("lvstckown1", "lvstckown2", "lvstckown3", "lvstckown4", "lvstckown5", "lvstckown6", "lvstckown7", "lvstckown8", "lvstckown9", "lvstckown10", "lvstckown11", "lvstckown12", "lvstckown13", "lvstckown14", "lvstckown15"), " ")%>%
+  separate(herdynamics, c("herdynamics1", "herdynamics2", "herdynamics3", "herdynamics4", "herdynamics5", "herdynamics6", "herdynamics7"), " ")
+
+# new column
+household_merged_data3 <- household_merged_data2%>%
+  mutate(study_arm = ifelse(village.x%in%c("Lependera", "Saale-Sambakah", "Namarei", "Manyatta Lengima", "Lokoshula", "TubchaDakhane", "Rengumo-Gargule"), "Study arm 1", ifelse(  village.x%in%c("Uyam  village", "Rongumo_kurkum", "Manyatta K.A.G", "Ltepes Ooodo", "Lbaarok1"), "Study arm 2", "Study arm 3")))
+
+# new object
+herd_dynamics <- household_merged_data3%>%
+  select(interview_date.x, household_id, study_arm, cwsbrth, shpbrth, goatsbrth, cmlsbrth, calves_death, bulls_death, cows_death, sheep_death, msheep_death, fsheep_death, goats_death, mgoats_death, fgoats_death, camels_death, mcamels_death, fcamels_death, cowsgft, sheepgfts, goatsgft, cmlsgft, cowsgvnout, sheepgvnout, goatsgvnout, cmlsgvnout)
+
+# new column
+herd_dynamics1 <- herd_dynamics%>%
+  separate(interview_date.x, c("year", "month", "day"), "-")%>%
+  mutate(monthyear=paste0(year, "-", month))
+
+#
+herd_dynamics2 <- herd_dynamics1%>%
+  group_by(study_arm, monthyear)%>%
+  mutate(cow_births=sum(cwsbrth, na.rm = T))%>%
+  mutate(shp_births=sum(shpbrth, na.rm = T))%>%
+  mutate(gt_births=sum(goatsbrth, na.rm = T))%>%
+  mutate(cml_births=sum(cmlsbrth, na.rm = T))%>%
+  mutate(cow_deaths=sum(c(calves_death, bulls_death, cows_death), na.rm = T))%>%
+  mutate(shp_deaths=sum(c(sheep_death, msheep_death, fsheep_death), na.rm = T))%>%
+  mutate(gt_deaths=sum(c(goats_death, mgoats_death, fgoats_death), na.rm = T))%>%
+  mutate(cml_deaths=sum(c(camels_death, mcamels_death, fcamels_death), na.rm = T))%>%
+  mutate(cow_gifts=sum(cowsgft, na.rm = T))%>%
+  mutate(shp_gifts=sum(sheepgfts, na.rm = T))%>%
+  mutate(gt_gifts=sum(goatsgft, na.rm = T))%>%
+  mutate(cml_gifts=sum(cmlsgft, na.rm = T))%>%
+  mutate(cow_givenout=sum(cowsgvnout, na.rm = T))%>%
+  mutate(shp_givenout=sum(sheepgvnout, na.rm = T))%>%
+  mutate(gt_givenout=sum(goatsgvnout, na.rm = T))%>%
+  mutate(cml_givenout=sum(cmlsgvnout, na.rm = T))%>%
+  ungroup()
+
+#subset
+herd_dynamics3 <- herd_dynamics2%>%
+  select(study_arm, monthyear, cow_births, shp_births, gt_births, cml_births, cow_deaths, shp_deaths, gt_deaths, cml_deaths, cow_gifts, shp_gifts, gt_gifts, cml_gifts, cow_givenout, shp_givenout, gt_givenout, cml_givenout)%>%
+  distinct(study_arm, monthyear, .keep_all=T)
+```
+
+# 2. Data Visualization Challenge
+```{r, echo=FALSE, fig.width=14, fig.height=8, message=FALSE, warning=FALSE}
+#prep data
+herd_dynamics4 <- herd_dynamics3%>%
+  pivot_longer(cols = c(cow_births:cml_givenout), names_to = "category", values_to = "number")%>%
+  mutate(dynamics=ifelse(grepl("births", category), "Births", ifelse(grepl("deaths", category), "Deaths", ifelse(grepl("gifts", category), "Gifts", "Given Out"))))%>%
+  mutate(species=ifelse(grepl("cow", category), "Cows", ifelse(grepl("shp", category), "Sheep", ifelse(grepl( "gt", category), "Goats", "Camels"))))
+
+# visuals 1
+herd_dynamics_plot <- ggplot(herd_dynamics4,aes(x=monthyear, y=number, fill=species))+
+  geom_col(position="dodge", stat="identity")+
+  theme_bw()+
+  facet_grid(rows=vars(dynamics))+
+  labs( y="Number of animals", title="Herd Dynamics", x="Time period (year-month)", fill="Species")+
+  scale_fill_manual(values = c("#d7191c","#fdae61","#ffffbf","#2c7bb6"))+
+  theme(text=element_text(size=12))
+herd_dynamics_plot
+
+# read & prep data for visuals 2
+teen_preg_data <- read_csv("table6_teenpregnancybycounty.csv")%>%
+  mutate(County=recode(County,"Tharaka-Nithi"="Tharaka Nithi", "Elgeyo/Marakwet"="Elgeyo Marakwet","Murang’a"="Muranga", "Nairobi City"="Nairobi", "Taita/Taveta"="Taita Taveta"))
+
+county <- st_read("County.shp")%>%
+  rename(County=Name)
+
+teen_preg_data1 <- full_join(county, teen_preg_data, by="County")
+
+# visuals 2
+teen_preg_map <- ggplot(teen_preg_data1)+
+  geom_sf(data=teen_preg_data1, aes(geometry=geometry), fill=NA)+
+  geom_sf(aes(fill=Ever_pregnant),color="grey80", size=0.0)+
+  theme_void()+
+  scale_fill_gradient(low = "white", high = "#8c2d04")+
+  labs(x="", y="",fill="Proportion (%)", title = "Percentage of teenagers\n who have ever\n been pregnant by county")+
+  theme(text=element_text(size=14))
+teen_preg_map
+```
+
+# 3. Data Analytics Challenge
+```{r, include=F, echo=FALSE, message=FALSE, warning=FALSE}
+# read data
+ideal_data <- read_csv("ideal3a.csv")%>%
+  clean_names()%>%
+  mutate(calf_sex=recode(calf_sex, "1"="Male", "2"="Female"))
+
+#prep data for model
+ideal_data$reasons_loss1 <- fct_relevel(ideal_data$reasons_loss1, "survived")
+ideal_data$calf_sex <- fct_relevel(ideal_data$calf_sex, "Female")
+ideal_data$distance_water <- fct_relevel(ideal_data$distance_water, "1-5 km")
+
+# logistic regression model
+ideal_glm_model <- glm(reasons_loss1~distance_water, data=ideal_data, family="binomial")
+exp(cbind(OR=coef(ideal_glm_model),confint(ideal_glm_model)))
+
+#calf_sex Male 8.38095111 3.25781115 28.53486053
+#distance_water <1 km        0.2462571 0.1233357 0.4816015
+#distance_water At household 0.4076923 0.1100863 1.2121723
+
+# linear regression model
+ideal_lm_model<-lm(adwg~manual_pcv, data = ideal_data)
+exp(cbind(cc= coef(ideal_lm_model), confint(ideal_lm_model)))
+
+#recruit_weight 1.004626 1.002877 1.006378
+#manual_pcv  1.001705 1.000831 1.002580
+```
+
+### Factors associated with calves' likelihood of death
+
+- Calf sex had a significant association with the likelihood of death with male calves having 8 times higher odds of death than female calves (OR=8.38, 95% CI=3.26,28.53)
+- Proximity to the water point also had a significant association with calves' likelihood of death. The likelihood of death was reduced by 25% among calves from households within less than 1km from the water point in comparison with calves from household within 1-5km from the water point (OR=0.25, 95% CI=0.12, 0.48). 
+
+### Factors associated with calves' growth rate
+
+- Calves' weight during recruitment had a positive association with their growth rate. Higher weight at recruitment led to a higher growth rate (CC=1.005, 95% CI=1.003,1.006)
+
+- The calves' health , as indicated by the Manual PCV, also had a positive association with their growth rate. A high manual PCV value led to a higher growth rate (CC=1.002, 95%CI=1.001,1.003)
